@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en" style="overflow-y: auto; min-height: 200px;">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel Comparison with Search</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <style>
+        /* Ensure the table container is scrollable */
+        #comparisonResult {
+            max-height: 400px !important; /* Set a height limit for scrolling */
+            overflow-y: auto !important;  /* Enable vertical scrolling */
+            margin-top: 20px !important;
+        }
+
+        /* Ensure the button stays in the top-right of the table */
+        #downloadButton {
+            position: absolute;
+            top: -70px !important;
+            right: 10px;
+            z-index: 10; /* Ensure it's on top of the table */
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5" style="max-width: 100%; overflow-x: hidden;">
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header text-center">
+                        <h4 class="text-black">Excel Comparison with Search</h4>
+                    </div>
+                    <div class="card-body">
+                        <form id="fileForm">
+                            <div class="form-group">
+                                <label for="masterFile" class="text-black">Upload Master File</label>
+                                <input type="file" class="form-control" id="masterFile" accept=".xlsx, .xls">
+                                <div class="form-check mt-2">
+                                    <input type="checkbox" class="form-check-input" id="rememberMasterFile">
+                                    <label for="rememberMasterFile" class="form-check-label text-black">
+                                        Remember this master file
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="form-group mt-3">
+                                <label for="secondaryFile" class="text-black">Upload Secondary File</label>
+                                <input type="file" class="form-control" id="secondaryFile" accept=".xlsx, .xls">
+                            </div>
+                            <button type="button" class="btn btn-warning text-white mt-3 w-100" id="compareButton" data-bs-toggle="modal" data-bs-target="#idConfirmationModal">Compare</button>
+                        </form>
+
+                        <!-- Search Section, initially hidden -->
+                        <div class="mt-4" id="searchSection" style="display: none;">
+                            <h5 class="text-black">Search ID in Master File</h5>
+                            <input type="text" id="searchIdInput" class="form-control" placeholder="Enter ID to search">
+                            <button class="btn btn-primary w-100 mt-2" id="searchButton">Search</button>
+                            <p id="searchResult" class="mt-2"></p>
+                        </div>
+
+                        <!-- Comparison Result Section -->
+                        <div id="comparisonResult" class="mt-4" style="display:none;">
+                            <h5 class="text-black">Comparison Result</h5>
+                            <p><strong>Secondary File Records:</strong> <span id="secondaryCount"></span></p>
+                            <div class="position-relative">
+                                <button class="btn btn-success position-absolute top-0 end-0 m-3" id="downloadButton" style="display:none;">Download Results</button>
+                            </div>
+                            <div>
+                                <table class="table table-bordered">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Master Amount</th>
+                                            <th>Secondary Amount</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="comparisonTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for ID Confirmation -->
+    <div class="modal fade" id="idConfirmationModal" tabindex="-1" aria-labelledby="idConfirmationModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="idConfirmationModalLabel">ID Confirmation</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Please make sure the IDs have been formatted to 9 characters.</p>
+                    <div id="loadingMessage" style="display:none;">
+                        <p class="text-center">Please wait, processing...</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="startComparison">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let masterData = [];
+        let rememberedMasterFile = null;
+    
+        document.getElementById('masterFile').addEventListener('change', function (event) {
+            if (document.getElementById('rememberMasterFile').checked) {
+                rememberedMasterFile = event.target.files[0];
+            }
+            loadMasterFile(event.target.files[0]);
+        });
+    
+        document.getElementById('rememberMasterFile').addEventListener('change', function () {
+            if (!this.checked) {
+                rememberedMasterFile = null;
+            }
+        });
+    
+        document.getElementById('compareButton').addEventListener('click', function () {
+            const masterFileInput = rememberedMasterFile || document.getElementById('masterFile').files[0];
+            const secondaryFileInput = document.getElementById('secondaryFile').files[0];
+    
+            if (!masterFileInput || !secondaryFileInput) {
+                alert('Please upload both files.');
+                return;
+            }
+    
+            // Trigger modal for confirmation
+            const modal = new bootstrap.Modal(document.getElementById('idConfirmationModal'));
+            modal.show();
+        });
+    
+        document.getElementById('startComparison').addEventListener('click', function () {
+            const masterFileInput = rememberedMasterFile || document.getElementById('masterFile').files[0];
+            const secondaryFileInput = document.getElementById('secondaryFile').files[0];
+    
+            // Show loading message in the modal
+            document.getElementById('loadingMessage').style.display = 'block';
+    
+            // Disable UI interactions while processing
+            document.getElementById('compareButton').disabled = true;
+    
+            processFiles(masterFileInput, secondaryFileInput);
+    
+            // Hide modal after starting comparison
+            const modal = bootstrap.Modal.getInstance(document.getElementById('idConfirmationModal'));
+            modal.hide();
+    
+            // Remove backdrop manually to ensure it disappears
+            document.querySelector('.modal-backdrop').remove();
+        });
+    
+        document.getElementById('searchButton').addEventListener('click', function () {
+            const searchId = document.getElementById('searchIdInput').value.trim();
+            if (!searchId) {
+                alert('Please enter an ID to search.');
+                return;
+            }
+    
+            const matchingRecords = masterData.filter(row => row[0].toString().trim() === searchId);
+            const resultElement = document.getElementById('searchResult');
+    
+            if (matchingRecords.length > 0) {
+                resultElement.innerHTML = `ID: ${searchId} found in the following records:`;
+                resultElement.className = 'text-success';
+                const recordsList = document.createElement('ul');
+    
+                matchingRecords.forEach(record => {
+                    const li = document.createElement('li');
+                    li.textContent = `Amount: ${record[1]}`;
+                    recordsList.appendChild(li);
+                });
+    
+                resultElement.appendChild(recordsList);
+            } else {
+                resultElement.textContent = `ID: ${searchId} does not exist in the master file.`;
+                resultElement.className = 'text-danger';
+            }
+        });
+    
+        function loadMasterFile(file) {
+            const reader = new FileReader();
+            reader.onload = function (event) {
+                const workbook = XLSX.read(event.target.result, { type: 'binary' });
+                const sheet = workbook.Sheets[Object.keys(workbook.Sheets)[0]];
+                masterData = XLSX.utils.sheet_to_json(sheet, { header: 1 }).slice(1); // Exclude header row
+    
+                // Show search section
+                document.getElementById('searchSection').style.display = 'block';
+                alert('Master file loaded successfully.');
+            };
+            reader.readAsBinaryString(file);
+        }
+    
+        function processFiles(masterFile, secondaryFile) {
+            const reader2 = new FileReader();
+    
+            reader2.onload = function (event) {
+                const workbook2 = XLSX.read(event.target.result, { type: 'binary' });
+                const sheet2 = workbook2.Sheets[Object.keys(workbook2.Sheets)[0]];
+                const secondaryData = XLSX.utils.sheet_to_json(sheet2, { header: 1 }).slice(1); // Exclude header row
+    
+                // Ensure both files have the same number of columns
+                if (masterData[0].length !== secondaryData[0].length) {
+                    alert('The files have different numbers of columns. Please check the files.');
+                    document.getElementById('compareButton').disabled = false;
+                    document.getElementById('loadingMessage').style.display = 'none';
+                    return;
+                }
+    
+                // Clean data before comparison
+                const cleanedMasterData = cleanData(masterData);
+                const cleanedSecondaryData = cleanData(secondaryData);
+    
+                const result = compareFiles(cleanedMasterData, cleanedSecondaryData);
+    
+                document.getElementById('secondaryCount').textContent = cleanedSecondaryData.length;
+                displayComparisonResult(result);
+                enableDownload(result);
+    
+                // Re-enable button and hide loading message after processing
+                document.getElementById('compareButton').disabled = false;
+                document.getElementById('loadingMessage').style.display = 'none';
+            };
+    
+            reader2.readAsBinaryString(secondaryFile);
+        }
+    
+        function cleanData(data) {
+            return data.map(row => row.map(cell => {
+                if (typeof cell === 'string') {
+                    return cell.trim().replace(/[^a-zA-Z0-9.-]/g, ''); // Remove non-printable characters
+                } else if (typeof cell === 'number') {
+                    return cell.toFixed(2); // Ensure numbers have 2 decimal places
+                }
+                return cell;
+            }));
+        }
+    
+        function compareFiles(masterData, secondaryData) {
+            const result = [];
+            const masterDataMap = new Map(masterData.map(row => [normalizeId(row[0]), normalizeAmount(row[1])]));
+    
+            secondaryData.forEach(secondaryRow => {
+                const secondaryId = normalizeId(secondaryRow[0]);
+                const secondaryAmount = normalizeAmount(secondaryRow[1]);
+    
+                let status = "Does not exist";
+                let masterAmount = "N/A";
+                if (masterDataMap.has(secondaryId)) {
+                    masterAmount = masterDataMap.get(secondaryId);
+                    status = masterAmount === secondaryAmount ? "Match" : "Mismatch";
+                }
+    
+                result.push({ id: secondaryId, masterAmount, secondaryAmount, status });
+            });
+    
+            return result;
+        }
+    
+        function normalizeId(id) {
+            return id.toString().trim().padStart(9, '0');
+        }
+    
+        function normalizeAmount(amount) {
+            return parseFloat(amount.toString().replace(/[^0-9.-]+/g, "")).toFixed(2);
+        }
+    
+        function displayComparisonResult(result) {
+            const tbody = document.getElementById('comparisonTableBody');
+            tbody.innerHTML = ''; // Clear previous results
+    
+            result.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${row.id}</td>
+                    <td>${row.masterAmount}</td>
+                    <td>${row.secondaryAmount}</td>
+                    <td>${row.status}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+    
+            document.getElementById('comparisonResult').style.display = 'block';
+        }
+    
+        function enableDownload(result) {
+            document.getElementById('downloadButton').style.display = 'block';
+    
+            document.getElementById('downloadButton').addEventListener('click', function () {
+                const wb = XLSX.utils.book_new();
+                const ws = XLSX.utils.json_to_sheet(result);
+    
+                XLSX.utils.book_append_sheet(wb, ws, 'ComparisonResult');
+                XLSX.writeFile(wb, 'ComparisonResult.xlsx');
+            });
+        }
+    </script>
+    
+</body>
+</html>
