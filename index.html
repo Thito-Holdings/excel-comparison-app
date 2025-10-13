@@ -23,6 +23,12 @@
             right: 10px;
             z-index: 10; /* Ensure it's on top of the table */
         }
+
+        .file-source {
+            font-size: 0.8rem;
+            color: #6c757d;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -45,6 +51,19 @@
                                     </label>
                                 </div>
                             </div>
+
+                            <!-- New Second Master File Upload -->
+                            <div class="form-group mt-3">
+                                <label for="masterFile2" class="text-black">Upload Second Master File (Optional)</label>
+                                <input type="file" class="form-control" id="masterFile2" accept=".xlsx, .xls">
+                                <div class="form-check mt-2">
+                                    <input type="checkbox" class="form-check-input" id="rememberMasterFile2">
+                                    <label for="rememberMasterFile2" class="form-check-label text-black">
+                                        Remember this master file
+                                    </label>
+                                </div>
+                            </div>
+
                             <div class="form-group mt-3">
                                 <label for="secondaryFile" class="text-black">Upload Secondary File</label>
                                 <input type="file" class="form-control" id="secondaryFile" accept=".xlsx, .xls">
@@ -54,7 +73,7 @@
 
                         <!-- Search Section, initially hidden -->
                         <div class="mt-4" id="searchSection" style="display: none;">
-                            <h5 class="text-black">Search ID in Master File</h5>
+                            <h5 class="text-black">Search ID in Master Files</h5>
                             <input type="text" id="searchIdInput" class="form-control" placeholder="Enter ID to search">
                             <button class="btn btn-primary w-100 mt-2" id="searchButton">Search</button>
                             <p id="searchResult" class="mt-2"></p>
@@ -75,6 +94,7 @@
                                             <th>Master Amount</th>
                                             <th>Secondary Amount</th>
                                             <th>Status</th>
+                                            <th>Found In</th>
                                         </tr>
                                     </thead>
                                     <tbody id="comparisonTableBody"></tbody>
@@ -112,13 +132,22 @@
 
     <script>
         let masterData = [];
+        let masterData2 = [];
         let rememberedMasterFile = null;
+        let rememberedMasterFile2 = null;
     
         document.getElementById('masterFile').addEventListener('change', function (event) {
             if (document.getElementById('rememberMasterFile').checked) {
                 rememberedMasterFile = event.target.files[0];
             }
-            loadMasterFile(event.target.files[0]);
+            loadMasterFile(event.target.files[0], 1);
+        });
+
+        document.getElementById('masterFile2').addEventListener('change', function (event) {
+            if (document.getElementById('rememberMasterFile2').checked) {
+                rememberedMasterFile2 = event.target.files[0];
+            }
+            loadMasterFile(event.target.files[0], 2);
         });
     
         document.getElementById('rememberMasterFile').addEventListener('change', function () {
@@ -126,13 +155,20 @@
                 rememberedMasterFile = null;
             }
         });
+
+        document.getElementById('rememberMasterFile2').addEventListener('change', function () {
+            if (!this.checked) {
+                rememberedMasterFile2 = null;
+            }
+        });
     
         document.getElementById('compareButton').addEventListener('click', function () {
             const masterFileInput = rememberedMasterFile || document.getElementById('masterFile').files[0];
+            const masterFile2Input = rememberedMasterFile2 || document.getElementById('masterFile2').files[0];
             const secondaryFileInput = document.getElementById('secondaryFile').files[0];
     
             if (!masterFileInput || !secondaryFileInput) {
-                alert('Please upload both files.');
+                alert('Please upload at least the first master file and the secondary file.');
                 return;
             }
     
@@ -143,6 +179,7 @@
     
         document.getElementById('startComparison').addEventListener('click', function () {
             const masterFileInput = rememberedMasterFile || document.getElementById('masterFile').files[0];
+            const masterFile2Input = rememberedMasterFile2 || document.getElementById('masterFile2').files[0];
             const secondaryFileInput = document.getElementById('secondaryFile').files[0];
     
             // Show loading message in the modal
@@ -151,7 +188,7 @@
             // Disable UI interactions while processing
             document.getElementById('compareButton').disabled = true;
     
-            processFiles(masterFileInput, secondaryFileInput);
+            processFiles(masterFileInput, masterFile2Input, secondaryFileInput);
     
             // Hide modal after starting comparison
             const modal = bootstrap.Modal.getInstance(document.getElementById('idConfirmationModal'));
@@ -179,20 +216,44 @@
                 alert('Please enter an ID to search.');
                 return;
             }
-    
-            const matchingRecords = masterData.filter(row => row[0].toString().trim() === searchId);
+
+            const normalizedId = normalizeId(searchId);
             const resultElement = document.getElementById('searchResult');
     
-            if (matchingRecords.length > 0) {
+            // Search in both master files
+            const matchingRecords1 = masterData.filter(row => normalizeId(row[0]) === normalizedId);
+            const matchingRecords2 = masterData2.filter(row => normalizeId(row[0]) === normalizedId);
+    
+            if (matchingRecords1.length > 0 || matchingRecords2.length > 0) {
                 resultElement.innerHTML = `ID: ${searchId} found in the following records:`;
                 resultElement.className = 'text-success';
                 const recordsList = document.createElement('ul');
     
-                matchingRecords.forEach(record => {
-                    const li = document.createElement('li');
-                    li.textContent = `Amount: ${record[1]}`;
-                    recordsList.appendChild(li);
-                });
+                // Add records from first master file
+                if (matchingRecords1.length > 0) {
+                    const fileHeader = document.createElement('li');
+                    fileHeader.innerHTML = `<strong>Master File 1:</strong>`;
+                    recordsList.appendChild(fileHeader);
+                    
+                    matchingRecords1.forEach(record => {
+                        const li = document.createElement('li');
+                        li.textContent = `Amount: ${record[1]}`;
+                        recordsList.appendChild(li);
+                    });
+                }
+                
+                // Add records from second master file
+                if (matchingRecords2.length > 0) {
+                    const fileHeader = document.createElement('li');
+                    fileHeader.innerHTML = `<strong>Master File 2:</strong>`;
+                    recordsList.appendChild(fileHeader);
+                    
+                    matchingRecords2.forEach(record => {
+                        const li = document.createElement('li');
+                        li.textContent = `Amount: ${record[1]}`;
+                        recordsList.appendChild(li);
+                    });
+                }
     
                 resultElement.appendChild(recordsList);
             } else {
@@ -204,21 +265,27 @@
             document.getElementById('searchIdInput').value = '';
         }
     
-        function loadMasterFile(file) {
+        function loadMasterFile(file, fileNumber) {
             const reader = new FileReader();
             reader.onload = function (event) {
                 const workbook = XLSX.read(event.target.result, { type: 'binary' });
                 const sheet = workbook.Sheets[Object.keys(workbook.Sheets)[0]];
-                masterData = XLSX.utils.sheet_to_json(sheet, { header: 1 }).slice(1); // Exclude header row
+                const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }).slice(1); // Exclude header row
     
+                if (fileNumber === 1) {
+                    masterData = data;
+                } else {
+                    masterData2 = data;
+                }
+                
                 // Show search section
                 document.getElementById('searchSection').style.display = 'block';
-                alert('Master file loaded successfully.');
+                alert(`Master file ${fileNumber} loaded successfully.`);
             };
             reader.readAsBinaryString(file);
         }
     
-        function processFiles(masterFile, secondaryFile) {
+        function processFiles(masterFile, masterFile2, secondaryFile) {
             const reader2 = new FileReader();
     
             reader2.onload = function (event) {
@@ -227,7 +294,7 @@
                 const secondaryData = XLSX.utils.sheet_to_json(sheet2, { header: 1 }).slice(1); // Exclude header row
     
                 // Ensure both files have the same number of columns
-                if (masterData[0].length !== secondaryData[0].length) {
+                if (masterData[0] && masterData[0].length !== secondaryData[0].length) {
                     alert('The files have different numbers of columns. Please check the files.');
                     document.getElementById('compareButton').disabled = false;
                     document.getElementById('loadingMessage').style.display = 'none';
@@ -236,9 +303,10 @@
     
                 // Clean data before comparison
                 const cleanedMasterData = cleanData(masterData);
+                const cleanedMasterData2 = masterFile2 ? cleanData(masterData2) : [];
                 const cleanedSecondaryData = cleanData(secondaryData);
     
-                const result = compareFiles(cleanedMasterData, cleanedSecondaryData);
+                const result = compareFiles(cleanedMasterData,  cleanedMasterData2, cleanedSecondaryData);
     
                 document.getElementById('secondaryCount').textContent = cleanedSecondaryData.length;
                 displayComparisonResult(result);
@@ -263,9 +331,27 @@
             }));
         }
     
-        function compareFiles(masterData, secondaryData) {
+        function compareFiles(masterData, masterData2, secondaryData) {
             const result = [];
-            const masterDataMap = new Map(masterData.map(row => [normalizeId(row[0]), normalizeAmount(row[1])]));
+
+            const masterDataMap = new Map(masterData.map(row => [normalizeId(row[0]), {
+                amount: normalizeAmount(row[1]),
+                source: 'Master File 1'
+            }]));
+
+            const masterData2Map = new Map();
+            if (masterData2.length > 0) {
+                masterData2.forEach(row => {
+                    const id = normalizeId(row[0]);
+                    // Only add if not already in first master file
+                    if (!masterDataMap.has(id)) {
+                        masterData2Map.set(id, {
+                            amount: normalizeAmount(row[1]),
+                            source: 'Master File 2'
+                        });
+                    }
+                });
+            }
     
             secondaryData.forEach(secondaryRow => {
                 const secondaryId = normalizeId(secondaryRow[0]);
@@ -273,12 +359,30 @@
     
                 let status = "Does not exist";
                 let masterAmount = "N/A";
+                let foundIn = "Not found";
+
+                // Check in first master file
                 if (masterDataMap.has(secondaryId)) {
-                    masterAmount = masterDataMap.get(secondaryId);
+                    const masterRecord = masterDataMap.get(secondaryId);
+                    masterAmount = masterRecord.amount;
+                    foundIn = masterRecord.source;
+                    status = masterAmount === secondaryAmount ? "Match" : "Mismatch";
+                }
+                // If not found in first master file, check in second
+                else if (masterData2Map.has(secondaryId)) {
+                    const masterRecord = masterData2Map.get(secondaryId);
+                    masterAmount = masterRecord.amount;
+                    foundIn = masterRecord.source;
                     status = masterAmount === secondaryAmount ? "Match" : "Mismatch";
                 }
     
-                result.push({ id: secondaryId, masterAmount, secondaryAmount, status });
+                result.push({ 
+                    id: secondaryId, 
+                    masterAmount, 
+                    secondaryAmount, 
+                    status,
+                    foundIn
+                });
             });
     
             return result;
@@ -303,6 +407,7 @@
                     <td>${row.masterAmount}</td>
                     <td>${row.secondaryAmount}</td>
                     <td>${row.status}</td>
+                    <td>${row.foundIn}</td>
                 `;
                 tbody.appendChild(tr);
             });
